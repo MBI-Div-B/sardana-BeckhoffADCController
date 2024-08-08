@@ -14,7 +14,7 @@ class BeckhoffADCOneDController(OneDController):
     Controller for 1D trace measurements on Beckhoff/tango DS at PETRAIII/P04.
     """
 
-    MaxDevice = 4
+    MaxDevice = 16
 
     ATTR_NPTS = "ADCBufferSize"
     ATTR_PREPARE = "ADCPrepare"
