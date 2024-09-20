@@ -48,7 +48,8 @@ class BeckhoffADCCtrlMixin:
         self._proxy = DeviceProxy(self.tango_server)
         self._axes = {}
         self.acq_rate = 1000
-        self._latency_time = 1 / self.acq_rate
+        # self._latency_time = 1 / self.acq_rate
+        self._latency_time = 0
 
     def AddDevice(self, axis):
         self._log.debug(f"Adding axis {axis}")
@@ -71,7 +72,8 @@ class BeckhoffADCCtrlMixin:
 
     def GetCtrlPar(self, name):
         if name == "latency_time":
-                return self._latency_time
+            self._log.debug(f"{self._latency_time=}")
+            return self._latency_time
         else:
             return super().GetCtrlPar(name)
     
@@ -105,7 +107,7 @@ class BeckhoffADCCtrlMixin:
             raise ValueError(f"Minimum exposure time is {1 / self.acq_rate:.3f}!")
         
         self._npts_average = int(exposure * self.acq_rate)
-        self._latency_time = max(1 / self.acq_rate, exposure)
+        self._latency_time = exposure
         npts = int(self._npts_average * repetitions)
         
         if npts > self.MAXLENGTH:
@@ -170,7 +172,7 @@ class BeckhoffADCCTController(BeckhoffADCCtrlMixin, CounterTimerController):
 
     def __init__(self, inst, props, *args, **kwargs):
         CounterTimerController.__init__(self, inst, props, *args, **kwargs)
-        BeckhoffADCCtrlMixin.__init__(self, OneDController)
+        BeckhoffADCCtrlMixin.__init__(self, CounterTimerController)
         self._synchronization = AcqSynch.SoftwareStart
     
     def StartOne(self, axis, value):
