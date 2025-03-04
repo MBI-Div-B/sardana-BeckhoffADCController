@@ -72,7 +72,7 @@ class BeckhoffADCCtrlMixin:
 
     def GetCtrlPar(self, name):
         if name == "latency_time":
-            latency_ms = self._proxy.read_attribute(ATTR_LATENCY_MS)
+            latency_ms = self._proxy.read_attribute(self.ATTR_LATENCY_MS).value
             self._latency_time = latency_ms / 1000
             self._log.debug(f"{self._latency_time=}")
             return self._latency_time
@@ -108,8 +108,8 @@ class BeckhoffADCCtrlMixin:
         """Configure Beckhoff for buffered measurement of given size"""
         self._log.info(f'LoadOne {axis=} {exposure=} {repetitions=} {latency=}')
 
-        if repetitions > self.MAXLENGTH:
-            raise ValueError(f"Maxmimum number of repetitions is {self.MAXLENGTH}!")
+        if repetitions > self.MAX_MEASUREMENTS:
+            raise ValueError(f"Maxmimum number of repetitions is {self.MAX_MEASUREMENTS}!")
         
         self._repetitions = repetitions
         self._exposure_ms = int(1000 * exposure)
