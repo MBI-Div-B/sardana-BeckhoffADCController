@@ -18,13 +18,15 @@ class BeckhoffADCCtrlMixin:
 
     MaxDevice = 16
 
-    ATTR_NPTS = "ADCBufferSize"
-    ATTR_INDEX = "ADC1BufferIndex"
+    ATTR_EXPOSURE_MS = "ADCIntegrateMS"
+    ATTR_LATENCY_MS = "ADCLatencyMS"
+    ATTR_REPETITIONS = "ADCNumMeasurements"
+    ATTR_INDEX = "ADCMeasurementsComplete"
     ATTR_PREPARE = "ADCPrepare"
     ATTR_START = "ADCStart"
     ATTR_STOP = "ADCStop"
-    ATTR_STATE = "ADC1BufferState"
-    MAXLENGTH = 100_000
+    ATTR_STATE = "ADCState"
+    MAX_MEASUREMENTS = 100_000
 
     ctrl_properties = {
         "tango_server": {
@@ -47,8 +49,6 @@ class BeckhoffADCCtrlMixin:
         self._ctrl_class = ctrl_class
         self._proxy = DeviceProxy(self.tango_server)
         self._axes = {}
-        self.acq_rate = 1000
-        # self._latency_time = 1 / self.acq_rate
         self._latency_time = 0
 
     def AddDevice(self, axis):
@@ -72,6 +72,8 @@ class BeckhoffADCCtrlMixin:
 
     def GetCtrlPar(self, name):
         if name == "latency_time":
+            latency_ms = self._proxy.read_attribute(ATTR_LATENCY_MS)
+            self._latency_time = latency_ms / 1000
             self._log.debug(f"{self._latency_time=}")
             return self._latency_time
         else:
@@ -86,12 +88,15 @@ class BeckhoffADCCtrlMixin:
     def StateAll(self):
         state = self._proxy.read_attribute(self.ATTR_STATE).value
         self._log.debug(f"StateAll: {state=}")
-        if state in [1, 3]:
+        if state == 0:
             self.state = State.On
-            self.status = "Detector ready"
+            self.status = "Stopped and ready to acquire"
+        elif state == 1:
+            self.state = State.Moving
+            self.status = "Acquiring"
         elif state == 2:
             self.state = State.Moving
-            self.status = "Detector acquiring"
+            self.status = "Waiting configured latency time"
         else:
             self.state = State.Fault
             self.status = f"Unxepected state: {state}"
@@ -103,20 +108,20 @@ class BeckhoffADCCtrlMixin:
         """Configure Beckhoff for buffered measurement of given size"""
         self._log.info(f'LoadOne {axis=} {exposure=} {repetitions=} {latency=}')
 
-        if exposure < (1 / self.acq_rate):
-            raise ValueError(f"Minimum exposure time is {1 / self.acq_rate:.3f}!")
+        if repetitions > self.MAXLENGTH:
+            raise ValueError(f"Maxmimum number of repetitions is {self.MAXLENGTH}!")
         
-        self._npts_average = int(exposure * self.acq_rate)
-        self._latency_time = exposure
-        npts = int(self._npts_average * repetitions)
-        
-        if npts > self.MAXLENGTH:
-            raise ValueError(f"Maxmimum number of acquisitions is {self.MAXLENGTH}!")
-        self._npts = npts
+        self._repetitions = repetitions
+        self._exposure_ms = int(1000 * exposure)
+        self._latency_ms = int(1000 * latency)
 
     def LoadAll(self):
         self._log.debug("In LoadAll")
-        self._proxy.write_attribute(self.ATTR_NPTS, self._npts)
+        self._proxy.write_attributes([
+            (self.ATTR_EXPOSURE_MS, self._exposure_ms),
+            (self.ATTR_LATENCY_MS, self._latency_ms),
+            (self.ATTR_REPETITIONS, self._repetitions),
+            ])
         self._proxy.write_attribute(self.ATTR_PREPARE, True)
 
     def StartOne(self, axis, value):
@@ -189,13 +194,12 @@ class BeckhoffADCCTController(BeckhoffADCCtrlMixin, CounterTimerController):
         data = self._proxy.read_float_array([[npts], [ads_symbol]])
         samples_returned = self._axes[axis]["samples_returned"]
         
-        full_samples = len(data) // self._npts_average
-        n0 = samples_returned * self._npts_average
-        n1 = full_samples * self._npts_average
-        self._log.debug(f"{data.shape=} {full_samples=} {n0=} {n1=}")
-        data = data[n0:n1].reshape((-1, self._npts_average)).mean(axis=1)
+        n0 = samples_returned
+        n1 = npts
+        self._log.debug(f"{data.shape=} {n0=} {n1=}")
+        data = data[n0:n1]
         values = data.tolist()
-        self._axes[axis]["samples_returned"] = full_samples
+        self._axes[axis]["samples_returned"] = n1
         self._log.debug(f"  returning {len(values)} samples")
         return values
 
